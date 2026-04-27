@@ -6,6 +6,7 @@ All endpoint paths and Redis channels are frozen.
 
 import json
 import logging
+import os
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -47,12 +48,15 @@ async def bot_speak(
     meeting = await _find_active_meeting(db, current_user.id, platform.value, native_meeting_id)
 
     if req.get("text"):
+        # Default voice is env-configurable so deployments can pick a locale-
+        # appropriate Piper voice without every API call needing to specify.
+        default_voice = os.getenv("TTS_DEFAULT_VOICE", "alloy")
         command = {
             "action": "speak",
             "meeting_id": meeting.id,
             "text": req["text"],
             "provider": req.get("provider", "openai"),
-            "voice": req.get("voice", "alloy"),
+            "voice": req.get("voice", default_voice),
         }
     elif req.get("audio_url") or req.get("audio_base64"):
         command = {
