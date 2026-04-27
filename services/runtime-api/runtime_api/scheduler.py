@@ -28,11 +28,33 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 from typing import Any, Optional
 from uuid import uuid4
 
 import httpx
+
+# Allowlist for scheduler-fired URLs. Upstream accepts arbitrary
+# {url, method, headers, body}, which is an SSRF primitive (audit finding #3).
+# Default-allow only http://meeting-api:8080/ since meeting-api is the only
+# in-deployment caller (it schedules its own bot-timeout callbacks).
+SCHEDULER_URL_ALLOWLIST = tuple(
+    p.strip()
+    for p in os.getenv(
+        "RUNTIME_API_SCHEDULER_URL_ALLOWLIST",
+        "http://meeting-api:8080/",
+    ).split(",")
+    if p.strip()
+)
+
+
+def _check_url_allowlist(url: str) -> None:
+    if not any(url.startswith(prefix) for prefix in SCHEDULER_URL_ALLOWLIST):
+        raise ValueError(
+            f"Scheduler URL not in allowlist. Allowed prefixes: "
+            f"{list(SCHEDULER_URL_ALLOWLIST)}"
+        )
 
 from runtime_api import config
 
@@ -69,6 +91,7 @@ def _make_job(spec: dict[str, Any]) -> dict[str, Any]:
     request = spec.get("request")
     if not request or not request.get("url"):
         raise ValueError("request.url is required")
+    _check_url_allowlist(request["url"])
 
     return {
         "job_id": f"job_{uuid4().hex[:16]}",
@@ -208,6 +231,7 @@ async def _fire_request(request: dict[str, Any]) -> dict[str, Any]:
     headers = request.get("headers", {})
     body = request.get("body")
     timeout = request.get("timeout", 30)
+    _check_url_allowlist(url)  # defense-in-depth: also re-check at fire time
 
     start = time.time()
     async with httpx.AsyncClient(follow_redirects=True) as client:

@@ -24,13 +24,7 @@ from runtime_api.api import router
 from runtime_api.lifecycle import handle_container_exit, idle_loop, reconcile_state
 from runtime_api.profiles import install_sighup_handler, load_profiles
 from runtime_api.scheduler import start_executor, stop_executor
-
-# Scheduler API not imported: it accepts arbitrary {url, method, headers, body}
-# and fires HTTP calls with no SSRF guard. We don't use scheduling in this
-# deployment; cutting the import removes the route entirely.
-SCHEDULER_API_ENABLED = os.getenv("RUNTIME_API_SCHEDULER_API", "0") == "1"
-if SCHEDULER_API_ENABLED:
-    from runtime_api.scheduler_api import scheduler_router
+from runtime_api.scheduler_api import scheduler_router
 
 logging.basicConfig(
     level=config.LOG_LEVEL,
@@ -74,8 +68,7 @@ def create_app() -> FastAPI:
         app.add_middleware(APIKeyMiddleware)
 
     app.include_router(router)
-    if SCHEDULER_API_ENABLED:
-        app.include_router(scheduler_router)
+    app.include_router(scheduler_router)
 
     @app.on_event("startup")
     async def startup():
