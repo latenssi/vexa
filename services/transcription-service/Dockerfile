@@ -1,23 +1,20 @@
+# syntax=docker/dockerfile:1.7
 FROM nvidia/cuda:12.3.2-cudnn9-runtime-ubuntu22.04
 
-# Install Python and dependencies
-RUN apt-get update && apt-get install -y \
-    python3.10 \
-    python3-pip \
-    curl \
-    libsndfile1 \
-    ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    apt-get update && apt-get install -y --no-install-recommends \
+    python3.10 python3-pip curl libsndfile1 ffmpeg
 
 WORKDIR /app
 
-# Copy requirements and install  
 COPY requirements.txt .
 # faster-whisper uses CTranslate2 which has built-in CUDA support (no PyTorch needed)
 # CUDA 12.3.2 base image includes all necessary CUDA/cuDNN libraries
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    pip3 install -r requirements.txt
 
-# Copy application
 COPY main.py .
 
 # Create models directory
