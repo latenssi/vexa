@@ -282,7 +282,8 @@ async def forward_request(client: httpx.AsyncClient, method: str, url: str, requ
 
     # Security: strip any client-supplied identity headers (prevent spoofing)
     for h in ["x-user-id", "x-user-scopes", "x-user-limits",
-              "x-user-webhook-url", "x-user-webhook-secret", "x-user-webhook-events"]:
+              "x-user-webhook-url", "x-user-webhook-secret", "x-user-webhook-events",
+              "x-internal-secret"]:
         headers.pop(h, None)
 
     # Determine target service based on URL path prefix
@@ -314,6 +315,12 @@ async def forward_request(client: httpx.AsyncClient, method: str, url: str, requ
                 headers["x-user-id"] = str(user_data["user_id"])
                 headers["x-user-scopes"] = ",".join(user_scopes)
                 headers["x-user-limits"] = str(user_data.get("max_concurrent", 1))
+                # Pair the identity assertion with INTERNAL_API_SECRET so
+                # downstream services can verify these headers actually came
+                # from the gateway (and not from an on-network peer).
+                _internal_secret = os.getenv("INTERNAL_API_SECRET", "")
+                if _internal_secret:
+                    headers["x-internal-secret"] = _internal_secret
 
                 # Inject webhook config headers (meeting-api stores in meeting.data)
                 wh_url = user_data.get("webhook_url")
@@ -1109,6 +1116,9 @@ async def _get_meeting_context(client: httpx.AsyncClient, user_id: str) -> Optio
     """
     try:
         headers = {"x-user-id": str(user_id)}
+        _internal_secret = os.getenv("INTERNAL_API_SECRET", "")
+        if _internal_secret:
+            headers["x-internal-secret"] = _internal_secret
 
         # Strategy 1: Check running bots
         active_meetings = []
@@ -1237,7 +1247,8 @@ async def agent_chat_proxy(request: Request):
     excluded = {"host", "content-length", "transfer-encoding"}
     headers = {k.lower(): v for k, v in request.headers.items() if k.lower() not in excluded}
     for h in ["x-user-id", "x-user-scopes", "x-user-limits",
-              "x-user-webhook-url", "x-user-webhook-secret", "x-user-webhook-events"]:
+              "x-user-webhook-url", "x-user-webhook-secret", "x-user-webhook-events",
+              "x-internal-secret"]:
         headers.pop(h, None)
 
     # Auth: inject identity headers
@@ -2108,6 +2119,9 @@ async def websocket_multiplex(ws: WebSocket):
                         auth_headers["x-user-id"] = str(user_data["user_id"])
                         auth_headers["x-user-scopes"] = ",".join(user_data.get("scopes", []))
                         auth_headers["x-user-limits"] = str(user_data.get("max_concurrent_bots", 1))
+                        _internal_secret = os.getenv("INTERNAL_API_SECRET", "")
+                        if _internal_secret:
+                            auth_headers["x-internal-secret"] = _internal_secret
                     resp = await app.state.http_client.post(url, headers=auth_headers, json={"meetings": payload_meetings})
                     if resp.status_code != 200:
                         await ws.send_text(json.dumps({"type": "error", "error": "authorization_service_error", "status": resp.status_code, "detail": resp.text}))
