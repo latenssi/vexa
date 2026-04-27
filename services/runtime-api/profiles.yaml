@@ -10,8 +10,8 @@ profiles:
   # Lifetime: managed by meeting-api (scheduler max_bot_time + bot-side timers)
   meeting:
     image: "${BROWSER_IMAGE}"
-    command: ["/app/vexa-bot/entrypoint.sh"]
-    working_dir: "/app/vexa-bot"
+    command: ["/app/entrypoint.sh"]
+    working_dir: "/app"
     resources:
       cpu_request: "1000m"     # measured p95: 780m (load test 2026-04-15, 19 bots)
       cpu_limit: "1500m"       # 1.5x headroom for browser spikes
@@ -37,8 +37,8 @@ profiles:
   # Lifetime: gateway heartbeats /touch on every /b/{token}/* request + periodic while WS open
   browser-session:
     image: "${BROWSER_IMAGE}"
-    command: ["/app/vexa-bot/entrypoint.sh"]
-    working_dir: "/app/vexa-bot"
+    command: ["/app/entrypoint.sh"]
+    working_dir: "/app"
     resources:
       cpu_request: "1000m"     # same as meeting bot
       cpu_limit: "1500m"
