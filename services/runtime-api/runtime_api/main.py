@@ -24,7 +24,13 @@ from runtime_api.api import router
 from runtime_api.lifecycle import handle_container_exit, idle_loop, reconcile_state
 from runtime_api.profiles import install_sighup_handler, load_profiles
 from runtime_api.scheduler import start_executor, stop_executor
-from runtime_api.scheduler_api import scheduler_router
+
+# Scheduler API not imported: it accepts arbitrary {url, method, headers, body}
+# and fires HTTP calls with no SSRF guard. We don't use scheduling in this
+# deployment; cutting the import removes the route entirely.
+SCHEDULER_API_ENABLED = os.getenv("RUNTIME_API_SCHEDULER_API", "0") == "1"
+if SCHEDULER_API_ENABLED:
+    from runtime_api.scheduler_api import scheduler_router
 
 logging.basicConfig(
     level=config.LOG_LEVEL,
@@ -34,6 +40,15 @@ logger = logging.getLogger("runtime_api")
 
 
 def create_app() -> FastAPI:
+    # Fail-closed: refuse to start if API_KEYS is empty. Upstream silently
+    # disables auth in that case, which is a footgun in any deployment where
+    # other containers can reach this service.
+    if not config.API_KEYS:
+        raise RuntimeError(
+            "API_KEYS env is empty; runtime-api refuses to start without "
+            "authentication. Set API_KEYS to a non-empty comma-separated list."
+        )
+
     vexa_env = os.getenv("VEXA_ENV", "development")
     public_docs = vexa_env != "production"
     app = FastAPI(
@@ -59,7 +74,8 @@ def create_app() -> FastAPI:
         app.add_middleware(APIKeyMiddleware)
 
     app.include_router(router)
-    app.include_router(scheduler_router)
+    if SCHEDULER_API_ENABLED:
+        app.include_router(scheduler_router)
 
     @app.on_event("startup")
     async def startup():
